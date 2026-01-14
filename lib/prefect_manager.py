@@ -30,6 +30,7 @@ Created: 2026-01-15
 
 import os
 import asyncio
+import uuid
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any, Union
 from dataclasses import dataclass
@@ -50,6 +51,8 @@ from prefect.client.schemas.filters import (
 )
 from prefect.client.schemas.sorting import FlowRunSort, DeploymentSort
 from prefect.client.schemas.objects import FlowRun, Deployment
+from prefect.events.schemas.automations import EventTrigger, Posture, AutomationCore
+from prefect.events.actions import RunDeployment as RunDeploymentAction
 
 
 @dataclass
@@ -191,7 +194,7 @@ class PrefectManager:
                     flow_name=flow.name,
                     description=d.description,
                     tags=list(d.tags) if d.tags else [],
-                    is_schedule_active=getattr(d, "is_schedule_active", True),
+                    is_schedule_active=getattr(d, 'is_schedule_active', True),
                     url=f"{self.cloud_url}/deployments/deployment/{d.id}"
                 ))
             
@@ -486,6 +489,117 @@ class PrefectManager:
         """Synchronous wrapper for list_blocks."""
         return asyncio.run(self.list_blocks())
     
+    # =========================================================================
+    # AUTOMATION MANAGEMENT
+    # =========================================================================
+
+    async def list_automations(self) -> List[Dict[str, Any]]:
+        """
+        List all automations.
+        
+        Returns:
+            List of automation dictionaries
+        """
+        async with get_client() as client:
+            # Note: read_automations might not be directly available in all client versions
+            # We use the generic read_automations if available, or fall back to API
+            try:
+                if hasattr(client, "read_automations"):
+                    automations = await client.read_automations()
+                else:
+                    # Fallback or specific implementation depending on SDK version
+                    # For now, assuming standard client has it or we catch AttributeError
+                    automations = await client.read_automations()
+                
+                return [
+                    {
+                        "id": str(a.id),
+                        "name": a.name,
+                        "description": a.description,
+                        "enabled": a.enabled,
+                        "trigger_type": a.trigger.type if a.trigger else "unknown",
+                        "actions": [act.type for act in a.actions]
+                    }
+                    for a in automations
+                ]
+            except Exception as e:
+                print(f"Error listing automations: {e}")
+                return []
+
+    def list_automations_sync(self) -> List[Dict[str, Any]]:
+        """Synchronous wrapper for list_automations."""
+        return asyncio.run(self.list_automations())
+
+    async def create_automation_deployment_trigger(
+        self,
+        name: str,
+        deployment_id: str,
+        match_resource_id: str = "prefect.resource.id:*",
+        expect_event: str = "external.trigger"
+    ) -> str:
+        """
+        Create an automation that triggers a deployment based on an event.
+        
+        Args:
+            name: Automation name
+            deployment_id: UUID of the deployment to trigger
+            match_resource_id: Resource ID pattern to match (default: wildcard)
+            expect_event: Event name to expect
+            
+        Returns:
+            Created Automation ID
+        """
+        async with get_client() as client:
+            # Define trigger
+            trigger = EventTrigger(
+                expect={expect_event},
+                match={"prefect.resource.id": match_resource_id},
+                posture=Posture.Reactive,
+                threshold=1,
+                within=0,
+            )
+            
+            # Define action
+            action = RunDeploymentAction(
+                source="selected",
+                deployment_id=deployment_id,
+                parameters={}
+            )
+            
+            # Create automation
+            automation = AutomationCore(
+                name=name,
+                trigger=trigger,
+                actions=[action],
+                enabled=True
+            )
+            
+            # create_automation usually returns the ID (UUID) in newer clients
+            result = await client.create_automation(automation)
+            return str(result)
+
+    def create_automation_deployment_trigger_sync(self, **kwargs) -> str:
+        """Synchronous wrapper for create_automation_deployment_trigger."""
+        return asyncio.run(self.create_automation_deployment_trigger(**kwargs))
+
+    async def delete_automation(self, automation_id: str) -> bool:
+        """
+        Delete an automation.
+        
+        Args:
+            automation_id: UUID of the automation
+            
+        Returns:
+            True if successful
+        """
+        async with get_client() as client:
+            await client.delete_automation(automation_id)
+            return True
+
+    def delete_automation_sync(self, automation_id: str) -> bool:
+        """Synchronous wrapper for delete_automation."""
+        return asyncio.run(self.delete_automation(automation_id))
+
     # =========================================================================
     # UTILITY METHODS
     # =========================================================================
