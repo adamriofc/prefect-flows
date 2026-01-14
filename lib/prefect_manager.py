@@ -191,7 +191,7 @@ class PrefectManager:
                     flow_name=flow.name,
                     description=d.description,
                     tags=list(d.tags) if d.tags else [],
-                    is_schedule_active=d.is_schedule_active,
+                    is_schedule_active=getattr(d, "is_schedule_active", True),
                     url=f"{self.cloud_url}/deployments/deployment/{d.id}"
                 ))
             
