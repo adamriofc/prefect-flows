@@ -1,153 +1,191 @@
-# Prefect Cloud Integration for OpenCode
+# Prefect Flows
 
-## Quick Reference
+Workflow orchestration flows managed by OpenCode with full Prefect Cloud integration.
 
-| Component | Location |
-|-----------|----------|
-| **Dashboard** | https://app.prefect.cloud |
-| **Account** | adamriofc |
-| **Workspace** | default |
-| **Client** | WSL (`~/.local/bin/prefect`) |
-| **Flows Folder** | `D:\Projects\PrefectFlows` |
-| **WSL Path** | `/mnt/d/Projects/PrefectFlows` |
+## Quick Start
+
+```bash
+# Run a flow locally
+wsl -- bash -l -c "cd /mnt/d/Projects/PrefectFlows && python3 hello_flow.py"
+
+# Start triggerable flow server
+wsl -- bash -l -c "cd /mnt/d/Projects/PrefectFlows && python3 triggerable_flow.py"
+
+# Use PrefectManager
+wsl -- bash -l -c "cd /mnt/d/Projects/PrefectFlows && python3 lib/prefect_manager.py health"
+```
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          PREFECT CLOUD                                      │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │  Dashboard: https://app.prefect.cloud                                 │  │
-│  │  - Monitoring & Logs                                                  │  │
-│  │  - Flow Run History                                                   │  │
-│  │  - Notifications                                                      │  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
-│                                    ↕ API                                    │
-└────────────────────────────────────│────────────────────────────────────────┘
-                                     │
-┌────────────────────────────────────│────────────────────────────────────────┐
-│  WSL (PC Lokal)                    ↓                                        │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │  Prefect Client (authenticated)                                       │  │
-│  │  - Runs Python scripts locally                                        │  │
-│  │  - Sends results to Cloud                                             │  │
-│  │  - Access to local files (D:\, C:\)                                   │  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────────┘
++-----------------------------------------------------------------------------+
+|                           PREFECT CLOUD                                     |
+|  Dashboard: https://app.prefect.cloud                                       |
++-----------------------------------------------------------------------------+
+                                    |
+                                    | API
+                                    v
++-----------------------------------------------------------------------------+
+|  OPENCODE (This PC)                                                         |
+|  +-----------------------------------------------------------------------+  |
+|  |  Prefect MCP Server                                                   |  |
+|  |  - Native integration for AI assistant                                |  |
+|  |  - Full control over Prefect Cloud resources                          |  |
+|  +-----------------------------------------------------------------------+  |
+|                                                                             |
+|  +-----------------------------------------------------------------------+  |
+|  |  GitHub Integration                                                   |  |
+|  |  - Repo: https://github.com/adamriofc/prefect-flows                   |  |
+|  |  - Auto-deploy on push via GitHub Actions                             |  |
+|  +-----------------------------------------------------------------------+  |
+|                                                                             |
+|  Project: D:\Projects\PrefectFlows                                          |
++-----------------------------------------------------------------------------+
 ```
-
-## Commands
-
-### Run Flow Directly
-```bash
-# Via WSL
-cd /mnt/d/Projects/PrefectFlows
-python3 hello_flow.py
-
-# Via OpenCode/Windows
-wsl -- bash -l -c "cd /mnt/d/Projects/PrefectFlows && python3 hello_flow.py"
-```
-
-### Using Helper Script
-```bash
-# Check status
-bash prefect-helper.sh status
-
-# List recent runs
-bash prefect-helper.sh runs
-
-# Run a flow
-bash prefect-helper.sh run hello_flow.py
-
-# Show help
-bash prefect-helper.sh help
-```
-
-### Prefect CLI (Direct)
-```bash
-# List flow runs
-~/.local/bin/prefect flow-run ls
-
-# View logs
-~/.local/bin/prefect flow-run logs <run-id>
-
-# Check version/connection
-~/.local/bin/prefect version
-```
-
-## Environment Variables
-
-Stored in `~/.bashrc`:
-```bash
-export PREFECT_API_URL="https://api.prefect.cloud/api/accounts/..."
-export PREFECT_API_KEY="pnu_..."
-```
-
-## Flow Example
-
-```python
-from prefect import flow, task
-
-@task
-def say_hello(name: str):
-    print(f"Hello, {name}!")
-    return f"Hello, {name}!"
-
-@flow(name="My Flow", log_prints=True)
-def my_flow(name: str = "World"):
-    result = say_hello(name)
-    return result
-
-if __name__ == "__main__":
-    my_flow()
-```
-
-## Scheduled Jobs (Serve Mode)
-
-For scheduled/recurring jobs, use `.serve()`:
-
-```python
-from prefect import flow
-
-@flow
-def my_scheduled_flow():
-    print("Running scheduled task...")
-
-if __name__ == "__main__":
-    # This will keep running and execute on schedule
-    my_scheduled_flow.serve(
-        name="my-scheduled-deployment",
-        cron="0 9 * * *",  # Every day at 9 AM
-    )
-```
-
-Run with:
-```bash
-# This is a long-running process
-python3 my_scheduled_flow.py
-```
-
-## Troubleshooting
-
-### Check Connection
-```bash
-~/.local/bin/prefect version
-# Should show: Server type: cloud
-```
-
-### Re-login if needed
-```bash
-~/.local/bin/prefect cloud login -k <API_KEY> -w adamriofc/default
-```
-
-### View Dashboard
-Open: https://app.prefect.cloud
 
 ## Files
 
+| File | Description |
+|------|-------------|
+| `hello_flow.py` | Simple Hello World flow for testing |
+| `triggerable_flow.py` | Flow with `.serve()` - triggerable from Cloud UI |
+| `remote_trigger_server.py` | HTTP API server for external triggers |
+| `lib/prefect_manager.py` | Python module for programmatic Prefect management |
+| `prefect-helper.sh` | Bash helper script for common operations |
+| `prefect.yaml` | Deployment configuration for GitOps |
+
+## Integration Methods
+
+### 1. Prefect MCP Server (Recommended)
+
+OpenCode has native integration with Prefect Cloud via MCP:
+
+```json
+// ~/.config/opencode/opencode.json
+{
+  "mcp": {
+    "prefect": {
+      "type": "local",
+      "command": ["uvx", "--from", "prefect-mcp", "prefect-mcp-server"],
+      "environment": {
+        "PREFECT_API_URL": "your-api-url",
+        "PREFECT_API_KEY": "your-api-key"
+      }
+    }
+  }
+}
 ```
-D:\Projects\PrefectFlows\
-├── hello_flow.py        # Sample flow
-├── prefect-helper.sh    # Helper script
-└── README.md            # This file
+
+### 2. PrefectManager Module
+
+```python
+from lib import PrefectManager
+
+manager = PrefectManager()
+
+# List deployments
+for d in manager.list_deployments_sync():
+    print(f"{d.flow_name}/{d.name}")
+
+# Trigger a deployment
+result = manager.trigger_deployment_sync(
+    "My Flow/my-deployment",
+    parameters={"key": "value"}
+)
+print(f"Started: {result.url}")
+
+# Wait for completion
+final = manager.wait_for_completion_sync(result.id)
+print(f"State: {final.state}")
 ```
+
+### 3. CLI Interface
+
+```bash
+# Health check
+python3 lib/prefect_manager.py health
+
+# List deployments
+python3 lib/prefect_manager.py deployments
+
+# List recent runs
+python3 lib/prefect_manager.py runs 10
+
+# Trigger deployment
+python3 lib/prefect_manager.py trigger "Hello World Flow/hello-flow"
+
+# Get run status
+python3 lib/prefect_manager.py status <flow-run-id>
+
+# Get dashboard URLs
+python3 lib/prefect_manager.py urls
+```
+
+### 4. Prefect CLI
+
+```bash
+# List deployments
+prefect deployment ls
+
+# Trigger deployment
+prefect deployment run 'Hello World Flow/hello-flow'
+
+# List flow runs
+prefect flow-run ls
+
+# Get logs
+prefect flow-run logs <flow-run-id>
+```
+
+### 5. REST API
+
+```bash
+PREFECT_API_URL="https://api.prefect.cloud/api/accounts/YOUR_ACCOUNT/workspaces/YOUR_WORKSPACE"
+PREFECT_API_KEY="pnu_YOUR_API_KEY"
+
+# List deployments
+curl -X POST "$PREFECT_API_URL/deployments/filter" \
+  -H "Authorization: Bearer $PREFECT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"limit": 10}'
+
+# Trigger deployment
+curl -X POST "$PREFECT_API_URL/deployments/DEPLOYMENT_ID/create_flow_run" \
+  -H "Authorization: Bearer $PREFECT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"parameters": {"key": "value"}}'
+```
+
+## Prefect Cloud Blocks
+
+| Block | Name | Purpose |
+|-------|------|---------|
+| GitHub Credentials | `opencode-github` | Auth for private repos |
+| GitHub Repository | `prefect-flows-repo` | Link to this repo |
+
+## GitHub Actions
+
+Push to `master` branch auto-deploys flows to Prefect Cloud.
+
+Required GitHub Secrets:
+- `PREFECT_API_KEY`: Prefect Cloud API key
+- `PREFECT_API_URL`: Prefect Cloud workspace URL
+- `PREFECT_WORKSPACE`: Workspace identifier (account/workspace)
+
+## Environment Variables
+
+```bash
+# Required for Prefect Cloud access
+export PREFECT_API_URL="https://api.prefect.cloud/api/accounts/YOUR_ACCOUNT/workspaces/YOUR_WORKSPACE"
+export PREFECT_API_KEY="pnu_YOUR_API_KEY"
+```
+
+## Links
+
+- **Prefect Cloud Dashboard**: https://app.prefect.cloud
+- **GitHub Repository**: https://github.com/adamriofc/prefect-flows
+- **Prefect Documentation**: https://docs.prefect.io
+
+---
+
+*Managed by OpenCode AI Assistant*

@@ -1,0 +1,45 @@
+# Prefect Configuration for GitOps Deployment
+# This file defines how flows are deployed from GitHub to Prefect Cloud
+#
+# Usage:
+#   prefect deploy --all              # Deploy all flows
+#   prefect deploy --name hello-flow  # Deploy specific flow
+
+prefect-version: 3.0.0
+name: prefect-flows
+
+# Pull configuration - how Prefect gets the code
+pull:
+  - prefect.deployments.steps.git_clone:
+      id: clone-repo
+      repository: https://github.com/adamriofc/prefect-flows.git
+      branch: master
+      credentials: "{{ prefect.blocks.github-credentials.opencode-github }}"
+
+  - prefect.deployments.steps.pip_install_requirements:
+      id: install-deps
+      directory: "{{ clone-repo.directory }}"
+      requirements_file: requirements.txt
+      stream_output: false
+
+# Deployment definitions
+deployments:
+  # Hello World Flow - Simple test deployment
+  - name: hello-flow
+    description: Simple Hello World flow for testing
+    entrypoint: hello_flow.py:hello_world_flow
+    tags:
+      - opencode
+      - hello
+    parameters:
+      name: "World"
+
+  # Triggerable Flow - Can be triggered from Prefect Cloud UI
+  - name: triggerable-flow
+    description: Flow that can be triggered from Prefect Cloud UI with parameters
+    entrypoint: triggerable_flow.py:triggerable_flow
+    tags:
+      - opencode
+      - triggerable
+    parameters:
+      data: "Default data"

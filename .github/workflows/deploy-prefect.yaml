@@ -1,0 +1,68 @@
+# GitHub Actions Workflow for Prefect Flow Deployment
+# Auto-deploys flows to Prefect Cloud when changes are pushed to main/master
+# 
+# Required Secrets (set in GitHub repo settings):
+#   - PREFECT_API_KEY: Your Prefect Cloud API key
+#   - PREFECT_API_URL: Your Prefect Cloud workspace URL
+
+name: Deploy Prefect Flows
+
+on:
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - '**.py'
+      - 'prefect.yaml'
+      - 'requirements.txt'
+  workflow_dispatch:  # Allow manual trigger
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  deploy:
+    name: Deploy Flows to Prefect Cloud
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install prefect prefect-github
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Prefect Cloud Login
+        run: |
+          prefect cloud login -k ${{ secrets.PREFECT_API_KEY }} --workspace ${{ secrets.PREFECT_WORKSPACE }}
+        env:
+          PREFECT_API_KEY: ${{ secrets.PREFECT_API_KEY }}
+
+      - name: Deploy All Flows
+        run: |
+          if [ -f prefect.yaml ]; then
+            prefect deploy --all
+          else
+            echo "No prefect.yaml found, skipping deployment"
+          fi
+        env:
+          PREFECT_API_KEY: ${{ secrets.PREFECT_API_KEY }}
+          PREFECT_API_URL: ${{ secrets.PREFECT_API_URL }}
+
+      - name: Deployment Summary
+        run: |
+          echo "## Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Flows have been deployed to Prefect Cloud." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "View your deployments at: https://app.prefect.cloud" >> $GITHUB_STEP_SUMMARY
