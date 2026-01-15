@@ -51,6 +51,8 @@ from prefect.client.schemas.filters import (
 )
 from prefect.client.schemas.sorting import FlowRunSort, DeploymentSort
 from prefect.client.schemas.objects import FlowRun, Deployment
+from prefect.client.schemas.actions import DeploymentScheduleCreate
+from prefect.client.schemas.schedules import IntervalSchedule, CronSchedule
 from prefect.events.schemas.automations import EventTrigger, Posture, AutomationCore
 from prefect.events.actions import RunDeployment as RunDeploymentAction
 
@@ -246,6 +248,45 @@ class PrefectManager:
     def trigger_deployment_sync(self, deployment_name: str, **kwargs) -> FlowRunResult:
         """Synchronous wrapper for trigger_deployment."""
         return asyncio.run(self.trigger_deployment(deployment_name, **kwargs))
+    
+    async def set_deployment_schedule(
+        self,
+        deployment_id: str,
+        cron: Optional[str] = None,
+        interval: Optional[int] = None
+    ) -> None:
+        """
+        Set deployment schedule (replaces existing).
+        
+        Args:
+            deployment_id: Deployment UUID
+            cron: Cron expression (e.g. "0 9 * * *")
+            interval: Interval in seconds
+        """
+        from prefect.client.schemas.actions import DeploymentUpdate, DeploymentScheduleCreate
+        
+        schedule_config = None
+        if cron:
+            schedule_config = CronSchedule(cron=cron)
+        elif interval:
+            schedule_config = IntervalSchedule(interval=timedelta(seconds=interval))
+            
+        async with get_client() as client:
+            await client.update_deployment(
+                deployment_id=deployment_id,
+                deployment=DeploymentUpdate(
+                    schedules=[
+                        {
+                            "schedule": schedule_config,
+                            "active": True
+                        }
+                    ]
+                )
+            )
+
+    def set_deployment_schedule_sync(self, **kwargs) -> None:
+        """Synchronous wrapper for set_deployment_schedule."""
+        return asyncio.run(self.set_deployment_schedule(**kwargs))
     
     # =========================================================================
     # FLOW RUN MANAGEMENT
@@ -490,6 +531,133 @@ class PrefectManager:
         return asyncio.run(self.list_blocks())
     
     # =========================================================================
+    # ARTIFACT MANAGEMENT
+    # =========================================================================
+    
+    async def create_artifact(
+        self,
+        key: str,
+        data: Union[Dict, str],
+        description: Optional[str] = None,
+        kind: str = "markdown"
+    ) -> str:
+        """
+        Create an artifact.
+        
+        Args:
+            key: Artifact key
+            data: Artifact data (markdown string or dict)
+            description: Optional description
+            kind: Artifact type (default: markdown)
+            
+        Returns:
+            Artifact key
+        """
+        async with get_client() as client:
+            await client.create_artifact(
+                key=key,
+                type=kind,
+                data=data,
+                description=description
+            )
+            return key
+
+    def create_artifact_sync(self, **kwargs) -> str:
+        """Synchronous wrapper for create_artifact."""
+        return asyncio.run(self.create_artifact(**kwargs))
+
+    async def read_artifacts(
+        self,
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Read latest artifacts.
+        
+        Args:
+            limit: Max number of artifacts
+            
+        Returns:
+            List of artifact info
+        """
+        async with get_client() as client:
+            artifacts = await client.read_latest_artifacts(limit=limit)
+            return [
+                {
+                    "id": str(a.id),
+                    "key": a.key,
+                    "type": a.type,
+                    "data": a.data,
+                    "created": str(a.created)
+                }
+                for a in artifacts
+            ]
+
+    def read_artifacts_sync(self, **kwargs) -> List[Dict[str, Any]]:
+        """Synchronous wrapper for read_artifacts."""
+        return asyncio.run(self.read_artifacts(**kwargs))
+
+    # =========================================================================
+    # WEBHOOK MANAGEMENT (Cloud Only)
+    # =========================================================================
+    
+    async def create_webhook(
+        self,
+        name: str,
+        template: str,
+        description: str = ""
+    ) -> Dict[str, Any]:
+        """
+        Create a Cloud Webhook.
+        
+        Args:
+            name: Webhook name
+            template: Jinja2 template string
+            description: Optional description
+            
+        Returns:
+            Created webhook dict with 'endpoint' (URL)
+        """
+        async with get_client() as client:
+            # Use raw client for Cloud-specific endpoints
+            try:
+                response = await client._client.post(
+                    "/webhooks/",
+                    json={
+                        "name": name,
+                        "description": description,
+                        "template": template,
+                        "enabled": True
+                    }
+                )
+                response.raise_for_status()
+                return response.json()
+            except Exception as e:
+                if "403" in str(e) or "Forbidden" in str(e):
+                    print("Warning: Webhooks not enabled (Requires Starter Plan or higher).")
+                    return {"name": name, "status": "skipped", "error": "Plan limitation"}
+                raise e
+
+    def create_webhook_sync(self, **kwargs) -> Dict[str, Any]:
+        """Synchronous wrapper for create_webhook."""
+        return asyncio.run(self.create_webhook(**kwargs))
+
+    async def list_webhooks(self) -> List[Dict[str, Any]]:
+        """
+        List Cloud Webhooks.
+        
+        Returns:
+            List of webhook dicts
+        """
+        async with get_client() as client:
+            response = await client._client.post("/webhooks/filter", json={})
+            response.raise_for_status()
+            return response.json()
+
+    def list_webhooks_sync(self) -> List[Dict[str, Any]]:
+        """Synchronous wrapper for list_webhooks."""
+        return asyncio.run(self.list_webhooks())
+
+    # =========================================================================
     # AUTOMATION MANAGEMENT
     # =========================================================================
 
@@ -599,6 +767,24 @@ class PrefectManager:
     def delete_automation_sync(self, automation_id: str) -> bool:
         """Synchronous wrapper for delete_automation."""
         return asyncio.run(self.delete_automation(automation_id))
+
+    async def pause_automation(self, automation_id: str) -> None:
+        """Pause an automation."""
+        async with get_client() as client:
+            await client.pause_automation(automation_id)
+
+    def pause_automation_sync(self, automation_id: str) -> None:
+        """Synchronous wrapper for pause_automation."""
+        return asyncio.run(self.pause_automation(automation_id))
+
+    async def resume_automation(self, automation_id: str) -> None:
+        """Resume an automation."""
+        async with get_client() as client:
+            await client.resume_automation(automation_id)
+
+    def resume_automation_sync(self, automation_id: str) -> None:
+        """Synchronous wrapper for resume_automation."""
+        return asyncio.run(self.resume_automation(automation_id))
 
     # =========================================================================
     # UTILITY METHODS
