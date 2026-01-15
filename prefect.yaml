@@ -27,7 +27,7 @@ deployments:
   # Hello World Flow - Simple test deployment
   - name: hello-flow
     description: Simple Hello World flow for testing
-    entrypoint: hello_flow.py:hello_world_flow
+    entrypoint: hello_flow.py:hello_flow
     tags:
       - opencode
       - hello
