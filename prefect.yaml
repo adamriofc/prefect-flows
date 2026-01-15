@@ -28,6 +28,8 @@ deployments:
   - name: hello-flow
     description: Simple Hello World flow for testing
     entrypoint: hello_flow.py:hello_flow
+    work_pool:
+      name: opencode-pool
     tags:
       - opencode
       - hello
@@ -38,6 +40,8 @@ deployments:
   - name: triggerable-flow
     description: Flow that can be triggered from Prefect Cloud UI with parameters
     entrypoint: triggerable_flow.py:triggerable_flow
+    work_pool:
+      name: opencode-pool
     tags:
       - opencode
       - triggerable
